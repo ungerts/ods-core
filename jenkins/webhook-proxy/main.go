@@ -20,9 +20,12 @@ import (
 )
 
 const (
-	namespaceFile            = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
-	tokenFile                = "/var/run/secrets/kubernetes.io/serviceaccount/token"
-	caCert                   = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+	namespaceFileDefault     = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+	namespaceFileEnvVar      = "NAMESPACE"
+	tokenFileDefault         = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+	tokenFileEnvVar          = "TOKEN_FILE"
+	caCertDefault            = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+	caCertEnvVar             = "CA_CERT"
 	pipelineConfigFilename   = "pipeline.template.json"
 	repoBaseEnvVar           = "REPO_BASE"
 	triggerSecretEnvVar      = "TRIGGER_SECRET"
@@ -120,7 +123,40 @@ func main() {
 		)
 	}
 
-	client, err := newClient(openShiftAPIHost, triggerSecret)
+	tokenFile := os.Getenv(tokenFileEnvVar)
+	if len(tokenFile) == 0 {
+		tokenFile = tokenFileDefault
+		log.Println(
+			"INFO:",
+			tokenFileEnvVar,
+			"not set, using default value:",
+			tokenFileDefault,
+		)
+	}
+
+	caCert := os.Getenv(caCertEnvVar)
+	if len(caCert) == 0 {
+		caCert = caCertDefault
+		log.Println(
+			"INFO:",
+			caCertEnvVar,
+			"not set, using default value:",
+			caCertDefault,
+		)
+	}
+
+	namespaceFile := os.Getenv(namespaceFileEnvVar)
+	if len(namespaceFile) == 0 {
+		namespaceFile = namespaceFileDefault
+		log.Println(
+			"INFO:",
+			namespaceFileEnvVar,
+			"not set, using default value:",
+			namespaceFileDefault,
+		)
+	}
+
+	client, err := newClient(openShiftAPIHost, triggerSecret, tokenFile, caCert)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -141,8 +177,78 @@ func main() {
 	log.Println("Booted")
 
 	mux := http.NewServeMux()
+	mux.Handle("/release", server.HandleRelease())
 	mux.Handle("/", server.HandleRoot())
-	log.Fatal(http.ListenAndServe(":8080", mux))
+	log.Fatal(http.ListenAndServe(":9090", mux))
+}
+
+// HandleRelease handles all release requests to this service.
+func (s *Server) HandleRelease() http.HandlerFunc {
+	type parameter struct {
+		Project string `json:"project"`
+		Branch  string `json:"branch"`
+		Repo    string `json:"repo"`
+		Params  []struct {
+			Key   string `json:"key"`
+			Value string `json:"value"`
+		} `json:"params"`
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		requestID := randStringBytes(6)
+		log.Println(requestID, "-----")
+		triggerSecretParam := r.URL.Query().Get("trigger_secret")
+		if triggerSecretParam != s.TriggerSecret {
+			log.Println(
+				requestID,
+				"trigger_secret param not given / not matching",
+			)
+			http.Error(w, "Not authorized", http.StatusUnauthorized)
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+			println("Get")
+			return
+		case http.MethodPost:
+			println("POST")
+		case http.MethodPut:
+			println("PUT")
+			return
+		case http.MethodDelete:
+			println("DELETE")
+			return
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		params := &parameter{}
+		json.NewDecoder(r.Body).Decode(params)
+		var project string
+		var repo string
+		var component string
+		var branch string
+
+		project = strings.ToLower(params.Project)
+		branch = params.Branch
+		repo = params.Repo
+		component = strings.Replace(repo, project+"-", "", -1)
+
+		pipeline := makePipelineName(project, component, branch)
+
+		gitURI := fmt.Sprintf(
+			"%s/%s/%s.git",
+			s.RepoBase,
+			project,
+			repo,
+		)
+
+		println(gitURI)
+		println(pipeline)
+
+		println(params.Params[0].Key)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("HTTP status code returned!"))
+	}
 }
 
 // HandleRoot handles all requests to this service.
@@ -436,13 +542,13 @@ func (e *Event) String() string {
 	)
 }
 
-func newClient(openShiftAPIHost string, triggerSecret string) (*ocClient, error) {
+func newClient(openShiftAPIHost string, triggerSecret string, tokenFile string, caCert string) (*ocClient, error) {
 	token, err := getFileContent(tokenFile)
 	if err != nil {
 		return nil, fmt.Errorf("Could not get token: %s", err)
 	}
 
-	secureClient, err := getSecureClient()
+	secureClient, err := getSecureClient(caCert)
 	if err != nil {
 		return nil, fmt.Errorf("Could not get client: %s", err)
 	}
@@ -480,9 +586,9 @@ func getBuildConfig(tmpl *template.Template, e *Event, triggerSecret string) (*b
 	return b, nil
 }
 
-func getSecureClient() (*http.Client, error) {
+func getSecureClient(caCertFileName string) (*http.Client, error) {
 	// Load CA cert
-	caCert, err := ioutil.ReadFile(caCert)
+	caCert, err := ioutil.ReadFile(caCertFileName)
 	if err != nil {
 		return nil, err
 	}
