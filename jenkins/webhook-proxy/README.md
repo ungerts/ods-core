@@ -40,9 +40,9 @@ The following environment variables are read by the proxy:
 | OPENSHIFT_API_HOST | Defaults to `openshift.default.svc.cluster.local`. Usually does not need to be modified. | Yes |
 | REPO_BASE | The base URL of the repository (e.g. your BitBucket host). This variable is set by the template and usually does not need to be modified. | No |
 | TRIGGER_SECRET | The secret which protects the pipeline to be executed from outside. This variable is set by the template and usually does not need to be modified. | Yes |
-| NAMESPACE_FILE | Location of the file containing the OpenShift namespace. | yes |
-| TOKEN_FILE | Location of the file containing the OpenShift access token. | yes |
-| CA_CERT_FILE | Location of the file containing the OpenShift instance CA cert. | yes |
+| NAMESPACE_FILE | Location of the file containing the OpenShift namespace. Defaults to: `/var/run/secrets/kubernetes.io/serviceaccount/namespace`. | yes |
+| TOKEN_FILE | Location of the file containing the OpenShift access token. Defaults to: `/var/run/secrets/kubernetes.io/serviceaccount/token`. | yes |
+| CA_CERT_FILE | Location of the file containing the OpenShift instance CA cert. Defaults to: `/var/run/secrets/kubernetes.io/serviceaccount/ca.crt`. | yes |
 
 Moreover, one can pass the following query parameters to the proxy:
 | Variable | Description |
