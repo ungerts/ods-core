@@ -20,9 +20,12 @@ import (
 )
 
 const (
-	namespaceFile            = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
-	tokenFile                = "/var/run/secrets/kubernetes.io/serviceaccount/token"
-	caCert                   = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+	namespaceFileDefault     = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+	namespaceFileEnvVar      = "NAMESPACE_FILE"
+	tokenFileDefault         = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+	tokenFileEnvVar          = "TOKEN_FILE"
+	caCertDefault            = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+	caCertEnvVar             = "CA_CERT_FILE"
 	pipelineConfigFilename   = "pipeline.template.json"
 	repoBaseEnvVar           = "REPO_BASE"
 	triggerSecretEnvVar      = "TRIGGER_SECRET"
@@ -128,7 +131,40 @@ func main() {
 		)
 	}
 
-	client, err := newClient(openShiftAPIHost, triggerSecret)
+	tokenFile := os.Getenv(tokenFileEnvVar)
+	if len(tokenFile) == 0 {
+		tokenFile = tokenFileDefault
+		log.Println(
+			"INFO:",
+			tokenFileEnvVar,
+			"not set, using default value:",
+			tokenFileDefault,
+		)
+	}
+
+	caCertFile := os.Getenv(caCertEnvVar)
+	if len(caCertFile) == 0 {
+		caCertFile = caCertDefault
+		log.Println(
+			"INFO:",
+			caCertEnvVar,
+			"not set, using default value:",
+			caCertDefault,
+		)
+	}
+
+	namespaceFile := os.Getenv(namespaceFileEnvVar)
+	if len(namespaceFile) == 0 {
+		namespaceFile = namespaceFileDefault
+		log.Println(
+			"INFO:",
+			namespaceFileEnvVar,
+			"not set, using default value:",
+			namespaceFileDefault,
+		)
+	}
+
+	client, err := newClient(openShiftAPIHost, tokenFile, caCertFile)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -456,13 +492,13 @@ func (e *Event) String() string {
 	)
 }
 
-func newClient(openShiftAPIHost string, triggerSecret string) (*ocClient, error) {
+func newClient(openShiftAPIHost string, tokenFile string, caCertFile string) (*ocClient, error) {
 	token, err := getFileContent(tokenFile)
 	if err != nil {
 		return nil, fmt.Errorf("Could not get token: %s", err)
 	}
 
-	secureClient, err := getSecureClient()
+	secureClient, err := getSecureClient(caCertFile)
 	if err != nil {
 		return nil, fmt.Errorf("Could not get client: %s", err)
 	}
@@ -488,9 +524,9 @@ func getBuildConfig(tmpl *template.Template, data BuildConfigData) (*bytes.Buffe
 	return b, nil
 }
 
-func getSecureClient() (*http.Client, error) {
+func getSecureClient(caCertFileName string) (*http.Client, error) {
 	// Load CA cert
-	caCert, err := ioutil.ReadFile(caCert)
+	caCert, err := ioutil.ReadFile(caCertFileName)
 	if err != nil {
 		return nil, err
 	}
