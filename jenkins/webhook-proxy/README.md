@@ -34,12 +34,15 @@ runs.
 
 The following environment variables are read by the proxy:
 
-| Variable | Description |
-| --- | --- |
-| PROTECTED_BRANCHES | Comma-separated list of branches which pipelines should not be cleaned up. Use either exact branch names, branch prefixes (e.g. `feature/`) or `*` for all branches. Defaults to: `master,develop,production,staging,release/`. |
-| OPENSHIFT_API_HOST | Defaults to `openshift.default.svc.cluster.local`. Usually does not need to be modified. |
-| REPO_BASE | The base URL of the repository (e.g. your BitBucket host). This variable is set by the template and usually does not need to be modified. |
-| TRIGGER_SECRET | The secret which protects the pipeline to be executed from outside. This variable is set by the template and usually does not need to be modified. |
+| Variable | Description | Optional |
+| --- | --- | --- |
+| PROTECTED_BRANCHES | Comma-separated list of branches which pipelines should not be cleaned up. Use either exact branch names, branch prefixes (e.g. `feature/`) or `*` for all branches. Defaults to: `master,develop,production,staging,release/`. | No |
+| OPENSHIFT_API_HOST | Defaults to `openshift.default.svc.cluster.local`. Usually does not need to be modified. | No |
+| REPO_BASE | The base URL of the repository (e.g. your BitBucket host). This variable is set by the template and usually does not need to be modified. | No |
+| TRIGGER_SECRET | The secret which protects the pipeline to be executed from outside. This variable is set by the template and usually does not need to be modified. | No |
+| NAMESPACE_FILE | Location of the file containing the OpenShift namespace. | yes |
+| TOKEN_FILE | Location of the file containing the OpenShift access token. | yes |
+| CA_CERT_FILE | Location of the file containing the OpenShift instance CA cert. | yes |
 
 Moreover, one can pass the following query parameters to the proxy:
 | Variable | Description |
