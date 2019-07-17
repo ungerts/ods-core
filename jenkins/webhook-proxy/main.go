@@ -26,7 +26,7 @@ const (
 	tokenFileEnvVar          = "TOKEN_FILE"
 	caCertDefault            = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 	caCertEnvVar             = "CA_CERT_FILE"
-	pipelineConfigFilename   = "pipeline.template.json"
+	pipelineConfigFilename   = "pipeline.json.tmpl"
 	repoBaseEnvVar           = "REPO_BASE"
 	triggerSecretEnvVar      = "TRIGGER_SECRET"
 	triggerSecretDefault     = "secret101"
