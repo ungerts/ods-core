@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html/template"
 	"io/ioutil"
 	"log"
 	"math/rand"
@@ -16,6 +15,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"text/template"
 	"time"
 )
 
@@ -38,6 +38,11 @@ const (
 	letterBytes              = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 )
 
+type EnvPair struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
 // Event is the internal representation of a BitBucket event described in
 // https://confluence.atlassian.com/bitbucketserver0511/using-bitbucket-server/managing-webhooks-in-bitbucket-server/event-payload
 type Event struct {
@@ -49,6 +54,7 @@ type Event struct {
 	Branch    string
 	Pipeline  string
 	RequestID string
+	Env       []EnvPair
 }
 
 // BuildConfigData represents the data to be rendered into the BuildConfig template.
@@ -58,6 +64,7 @@ type BuildConfigData struct {
 	GitURI          string
 	Branch          string
 	JenkinsfilePath string
+	Env             string
 }
 
 // Client makes requests, e.g. to create and delete pipelines, or to forward
@@ -197,7 +204,7 @@ func (s *Server) HandleRoot() http.HandlerFunc {
 		} `json:"project"`
 		Slug string `json:"slug"`
 	}
-	type request struct {
+	type requestBitbucket struct {
 		EventKey   string     `json:"eventKey"`
 		Repository repository `json:"repository"`
 		Changes    []struct {
@@ -212,6 +219,13 @@ func (s *Server) HandleRoot() http.HandlerFunc {
 				DisplayID  string     `json:"displayId"`
 			} `json:"fromRef"`
 		} `json:"pullRequest"`
+	}
+
+	type requestBuild struct {
+		Branch     string    `json:"branch"`
+		Project    string    `json:"project"`
+		Repository string    `json:"repository"`
+		Env        []EnvPair `json:"env"`
 	}
 
 	var (
@@ -249,47 +263,84 @@ func (s *Server) HandleRoot() http.HandlerFunc {
 			jenkinsfilePath = jenkinsfilePathParam
 		}
 
-		req := &request{}
-		json.NewDecoder(r.Body).Decode(req)
+		componentParam := queryValues.Get("component")
 
-		var project string
-		var repo string
-		var component string
-		var kind string
-		var branch string
+		var event *Event
 
-		if req.EventKey == "repo:refs_changed" {
-			project = strings.ToLower(req.Repository.Project.Key)
-			repo = req.Repository.Slug
-			component = strings.Replace(repo, project+"-", "", -1)
-			branch = req.Changes[0].Ref.DisplayID
-			if req.Changes[0].Type == "DELETE" {
+		if strings.HasPrefix(r.URL.Path, "/build") {
+			req := &requestBuild{}
+			json.NewDecoder(r.Body).Decode(req)
+
+			component := componentParam
+			if component == "" {
+				component = strings.Replace(req.Repository, req.Project+"-", "", -1)
+			}
+			pipeline := makePipelineName(req.Project, component, req.Branch)
+
+			event = &Event{
+				Kind:      "forward",
+				Project:   req.Project,
+				Namespace: s.Namespace,
+				Repo:      req.Repository,
+				Component: component,
+				Branch:    req.Branch,
+				Pipeline:  pipeline,
+				RequestID: requestID,
+				Env:       req.Env,
+			}
+
+		} else if r.URL.Path == "/" {
+
+			req := &requestBitbucket{}
+			json.NewDecoder(r.Body).Decode(req)
+
+			var project string
+			var repo string
+			var kind string
+			var branch string
+			component := componentParam
+
+			if req.EventKey == "repo:refs_changed" {
+				project = strings.ToLower(req.Repository.Project.Key)
+				repo = req.Repository.Slug
+				if component == "" {
+					component = strings.Replace(repo, project+"-", "", -1)
+				}
+				branch = req.Changes[0].Ref.DisplayID
+				if req.Changes[0].Type == "DELETE" {
+					kind = "delete"
+				} else {
+					kind = "forward"
+				}
+			} else if req.EventKey == "pr:merged" || req.EventKey == "pr:declined" {
+				project = strings.ToLower(req.PullRequest.FromRef.Repository.Project.Key)
+				repo = req.PullRequest.FromRef.Repository.Slug
+				if component == "" {
+					component = strings.Replace(repo, project+"-", "", -1)
+				}
+				branch = req.PullRequest.FromRef.DisplayID
 				kind = "delete"
 			} else {
-				kind = "forward"
+				log.Println(requestID, "Skipping unknown event", req.EventKey)
+				return
 			}
-		} else if req.EventKey == "pr:merged" || req.EventKey == "pr:declined" {
-			project = strings.ToLower(req.PullRequest.FromRef.Repository.Project.Key)
-			repo = req.PullRequest.FromRef.Repository.Slug
-			component = strings.Replace(repo, project+"-", "", -1)
-			branch = req.PullRequest.FromRef.DisplayID
-			kind = "delete"
+			pipeline := makePipelineName(project, component, branch)
+
+			event = &Event{
+				Kind:      kind,
+				Project:   project,
+				Namespace: s.Namespace,
+				Repo:      repo,
+				Component: component,
+				Branch:    branch,
+				Pipeline:  pipeline,
+				RequestID: requestID,
+			}
 		} else {
-			log.Println(requestID, "Skipping unknown event", req.EventKey)
+			http.NotFound(w, r)
 			return
 		}
-		pipeline := makePipelineName(project, component, branch)
 
-		event := &Event{
-			Kind:      kind,
-			Project:   project,
-			Namespace: s.Namespace,
-			Repo:      repo,
-			Component: component,
-			Branch:    branch,
-			Pipeline:  pipeline,
-			RequestID: requestID,
-		}
 		log.Println(requestID, event)
 
 		if event.Kind == "forward" {
@@ -299,14 +350,21 @@ func (s *Server) HandleRoot() http.HandlerFunc {
 				event.Project,
 				event.Repo,
 			)
+			env, err := json.Marshal(event.Env)
+			if err != nil {
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				return
+			}
+
 			buildConfigData := BuildConfigData{
 				Name:            event.Pipeline,
 				TriggerSecret:   s.TriggerSecret,
 				GitURI:          gitURI,
 				Branch:          event.Branch,
 				JenkinsfilePath: jenkinsfilePath,
+				Env:             string(env),
 			}
-			err := s.Client.CreatePipelineIfRequired(tmpl, event, buildConfigData)
+			err = s.Client.CreatePipelineIfRequired(tmpl, event, buildConfigData)
 			if err != nil {
 				log.Println(requestID, err)
 				return
@@ -319,6 +377,7 @@ func (s *Server) HandleRoot() http.HandlerFunc {
 			_, err = w.Write(res)
 			if err != nil {
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				return
 			}
 
 		} else if event.Kind == "delete" {
