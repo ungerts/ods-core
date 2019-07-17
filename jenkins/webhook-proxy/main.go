@@ -26,6 +26,8 @@ const (
 	tokenFileEnvVar          = "TOKEN_FILE"
 	caCertDefault            = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 	caCertEnvVar             = "CA_CERT_FILE"
+	serverPortDefault        = "8080"
+	serverPortEnvVar         = "SERVER_PORT"
 	pipelineConfigFilename   = "pipeline.json.tmpl"
 	repoBaseEnvVar           = "REPO_BASE"
 	triggerSecretEnvVar      = "TRIGGER_SECRET"
@@ -170,6 +172,17 @@ func main() {
 			namespaceFileDefault,
 		)
 	}
+        
+        serverPort := os.Getenv(serverPortEnvVar)
+	if len(serverPort) == 0 {
+		serverPort = serverPortDefault
+		log.Println(
+			"INFO:",
+			serverPortEnvVar,
+			"not set, using default value:",
+			serverPortDefault,
+		)
+	}
 
 	client, err := newClient(openShiftAPIHost, tokenFile, caCertFile)
 	if err != nil {
@@ -193,7 +206,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("/", server.HandleRoot())
-	log.Fatal(http.ListenAndServe(":8080", mux))
+        log.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", serverPort), mux))
 }
 
 // HandleRoot handles all requests to this service.
