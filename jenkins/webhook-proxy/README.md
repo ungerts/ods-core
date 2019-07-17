@@ -43,6 +43,7 @@ The following environment variables are read by the proxy:
 | NAMESPACE_FILE | Location of the file containing the OpenShift namespace. Defaults to: `/var/run/secrets/kubernetes.io/serviceaccount/namespace`. | yes |
 | TOKEN_FILE | Location of the file containing the OpenShift access token. Defaults to: `/var/run/secrets/kubernetes.io/serviceaccount/token`. | yes |
 | CA_CERT_FILE | Location of the file containing the OpenShift instance CA cert. Defaults to: `/var/run/secrets/kubernetes.io/serviceaccount/ca.crt`. | yes |
+| SERVER_PORT | Server port. Defaults to: 8080. | yes |
 
 Moreover, one can pass the following query parameters to the proxy:
 | Variable | Description |
