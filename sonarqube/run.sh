@@ -15,6 +15,11 @@ if [ $SONAR_AUTH_CROWD == true ]; then
   echo "sonar.security.localUsers=admin" >> conf/sonar.properties
 fi
 
+if [ $SONAR_SSO_ENABLED == true ]; then
+   echo "sonar.web.sso.enable=true" >> conf/sonar.properties
+   echo "sonar.web.sso.loginHeader=X-Forwarded-User" >> conf/sonar.properties
+fi
+
 # upgrade to 7.3
 rm $SONARQUBE_HOME/extensions/plugins/*.jar || true
 
