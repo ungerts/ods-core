@@ -20,6 +20,13 @@ if [ $SONAR_SSO_ENABLED == true ]; then
    echo "sonar.web.sso.loginHeader=X-Forwarded-User" >> conf/sonar.properties
 fi
 
+if [ $SONAR_OAUTH_PLUGIN_ENABLED == true ]; then
+   echo "sonar.auth.openshift.isEnabled=true" >> conf/sonar.properties
+   echo "sonar.auth.openshift.sar.groups=sonar-administrators=sonar-administrators,sonar-users=sonar-users" >> conf/sonar.properties
+   echo "ignore.certs=true" >> conf/sonar.properties
+   echo 'kubernetes.service=https://${env:KUBERNETES_SERVICE_HOST}:${env:KUBERNETES_SERVICE_PORT}/' >> conf/sonar.properties
+fi
+
 # upgrade to 7.3
 rm $SONARQUBE_HOME/extensions/plugins/*.jar || true
 
